@@ -55,8 +55,10 @@ def start_game():
 
 @app.route("/api/v1/guess/", methods=["POST"])
 def guess_word():
-    guess = request.get_json(force=True)["guess"]
-    game_id = request.get_json(force=True)["id"]
+    json_resp = request.get_json(force=True)
+    logger.debug(json_resp)
+    guess = json_resp["guess"]
+    game_id = json_resp["id"]
 
     if not (len(guess) == EXPRESSION_LENGTH and is_valid_expression(guess)):
         logger.info(f"Invalid expression with guess: {guess}")
@@ -64,14 +66,17 @@ def guess_word():
 
     with sql_context() as cur:
         cur.execute("""SELECT expression, guesses, finished FROM game WHERE id = (?)""", (game_id,))
-        answer, guesses, finished = cur.fetchone()
+        try:
+            answer, guesses, finished = cur.fetchone()
+        except TypeError:
+            logger.info(f"Invalid expression with game id: {game_id}")
+            return abort(500)
     logger.info(f"got {(answer, guesses, finished)}")
 
     guesses = guesses.split(",")
 
     if len(guesses) > 6 or finished:
-        logger.info("about to 403")
-        return abort(403)
+        return abort(404, "Game is already finished!")
 
     guesses.append(guess)
     guesses = ",".join(guesses)
