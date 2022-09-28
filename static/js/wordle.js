@@ -155,9 +155,11 @@ window.app = new Vue({
                 }).join("");
                 console.log(row);
                 console.log(word);
+                console.log(word.length < this.wordLength);
                 if (word.length < this.wordLength) return;
                 console.log("passed word length");
                 const newRow = await this.api.guess(this.gameID, this.apiKey, word)
+                console.log(newRow);
                 if (!newRow) {
                     return
                 }

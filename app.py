@@ -56,12 +56,11 @@ def start_game():
 @app.route("/api/v1/guess/", methods=["POST"])
 def guess_word():
     guess = request.get_json(force=True)["guess"]
+    game_id = request.get_json(force=True)["id"]
 
     if not (len(guess) == EXPRESSION_LENGTH and is_valid_expression(guess)):
         logger.info(f"Invalid expression with guess: {guess}")
         return abort(400, "Invalid expression!")
-
-    game_id = get_game_id(request)
 
     with sql_context() as cur:
         cur.execute("""SELECT expression, guesses, finished FROM game WHERE id = (?)""", (game_id,))
