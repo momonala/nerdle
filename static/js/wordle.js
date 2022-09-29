@@ -153,9 +153,10 @@ window.app = new Vue({
                 let word = row.map(val => {
                     return val.letter
                 }).join("");
+                console.log(word);
                 if (word.length < this.wordLength) return;
-
                 const newRow = await this.api.guess(this.gameID, this.apiKey, word)
+                console.log(newRow);
                 if (!newRow) {
                     return
                 }
@@ -172,7 +173,7 @@ window.app = new Vue({
                 styleKeys(row);
 
                 this.currentIndex += 1;
-                if (this.currentIndex >= this.wordLength+1 || correct) await this.finishGame();
+                if (this.currentIndex >= 6 || correct) await this.finishGame();
             } catch (e) {
                 throw(e);
             } finally {

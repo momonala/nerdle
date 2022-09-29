@@ -1,16 +1,24 @@
 import json
 import logging
 import uuid
+from typing import List, Dict
 
 from flask import Flask, render_template, request, abort, make_response
-
-# from flask_cors import CORS
-# from werkzeug.middleware.proxy_fix import ProxyFix
+from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from const import EXPRESSION_LENGTH
 from expressions import is_valid_expression, evalute_expression
-from sql import sql_context, init_db
-from utils import get_random_expression, get_game_id, set_finished_in_db, get_game_answer
+from sql import init_db
+from utils import (
+    get_random_expression,
+    get_game_id,
+    set_finished_in_db,
+    get_game_answer,
+    init_game_sql,
+    update_game_with_guess_sql,
+    get_current_game_sql,
+)
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.WARN)
@@ -21,8 +29,8 @@ logger = logging.getLogger(__name__)
 init_db()
 
 app = Flask(__name__)
-# app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
-# CORS(app)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+CORS(app)
 
 
 def api_response(json_data):
@@ -42,44 +50,55 @@ def index():
 def start_game():
     """Starts a new game"""
     game_id, expression = get_random_expression()
-    result = evalute_expression(expression)
+    answer = evalute_expression(expression)
     key = str(uuid.uuid4())
-    with sql_context() as cur:
-        cur.execute("""INSERT INTO game (expression, key) VALUES (?, ?)""", (expression, key))
-        last_row_id = cur.lastrowid
+    game_idx = init_game_sql(expression, key)
 
-    resp = {"id": last_row_id, "key": key, "wordID": game_id, "result": result}
+    resp = {"id": game_idx, "key": key, "wordID": game_id, "result": answer}
     logger.debug(f"route/start_game: {resp}")
     return api_response(resp)
 
 
 @app.route("/api/v1/guess/", methods=["POST"])
 def guess_word():
-    guess = request.get_json(force=True)["guess"]
+    json_resp = request.get_json(force=True)
+    logger.debug(json_resp)
+    guess = json_resp["guess"]
+    game_id = json_resp["id"]
 
     if not (len(guess) == EXPRESSION_LENGTH and is_valid_expression(guess)):
         return abort(400, "Invalid expression!")
 
-    game_id = get_game_id(request)
+    answer, finished, guesses = get_current_game_sql(game_id)
 
-    with sql_context() as cur:
-        cur.execute("""SELECT expression, guesses, finished FROM game WHERE id = (?)""", (game_id,))
-        answer, guesses, finished = cur.fetchone()
-
-    guesses = guesses.split(",")
-
-    if len(guesses) > EXPRESSION_LENGTH + 1 or finished:
-        return abort(403)
-
-    guesses.append(guess)
-    guesses = ",".join(guesses)
-
-    if guesses[0] == ",":
+    if len(guesses.split(",")) > 6 or finished:
+        return abort(404, "Game is already finished!")
+    guesses += f",{guess}"
+    if guesses.startswith(","):
         guesses = guesses[1:]
 
-    with sql_context() as cur:
-        cur.execute("""UPDATE game SET guesses = (?) WHERE id = (?)""", (guesses, game_id))
+    update_game_with_guess_sql(game_id, guesses)
+    guess_status = generate_guess_keyboard_mapping(answer, guess)
 
+    logger.debug(f"route/guess_word: {guess_status}")
+    return api_response(guess_status)
+
+
+def generate_guess_keyboard_mapping(answer: str, guess: str) -> List[Dict]:
+    """Creates the mapping used to color the keyboard in the UI. Returns a list
+    EXPRESSION_LENGTH length long, of dicts, where each dict contains a letter (what was
+    typed for that position) and a state of values [0, 1, 2] representing if the guessed
+    letter is not-present, present but misplaced, or correct.
+
+    Ex. If answer is `86-4` guess is `87-6`, then the function returns:
+        [
+            {'letter': '8', 'state': 2},
+            {'letter': '6', 'state': 0},
+            {'letter': '-', 'state': 2},
+            {'letter': '6', 'state': 1}
+       ]
+
+    """
     guess_status = [{"letter": g_char, "state": 0} for g_char in guess]
     guessed_pos = set()
 
@@ -90,7 +109,6 @@ def guess_word():
                 "letter": guess[a_pos],
                 "state": 2,
             }
-
     for g_pos, g_char in enumerate(guess):
         if g_char not in answer or guess_status[g_pos]["state"] != 0:
             continue
@@ -110,9 +128,7 @@ def guess_word():
             }
             guessed_pos.add(pos)
             break
-
-    logger.debug(f"route/guess_word: {guess_status}")
-    return api_response(guess_status)
+    return guess_status
 
 
 @app.route("/api/v1/finish_game/", methods=["POST"])
