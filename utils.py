@@ -51,3 +51,31 @@ def get_game_answer(game_id) -> str:
         answer = cur.fetchone()
     logger.debug(f"Got answer: {answer}")
     return answer[0]
+
+
+def init_game_sql(expression: str, key: str) -> str:
+    """Create a new game in the SQL database, return the index of the new game."""
+    with sql_context() as cur:
+        cur.execute("""INSERT INTO game (expression, key) VALUES (?, ?)""", (expression, key))
+        latest_game_idx = cur.lastrowid
+    return latest_game_idx
+
+
+def update_game_with_guess_sql(game_id: str, guesses: str):
+    """Update the game in SQL with the new guesses. `guesses` is comma separated list of guesses."""
+    with sql_context() as cur:
+        cur.execute("""UPDATE game SET guesses = (?) WHERE id = (?)""", (guesses, game_id))
+    logger.info("executed update")
+
+
+def get_current_game_sql(game_id: str) -> Tuple[str, str, str]:
+    """Return the current game's expression, guesses, and status, given a game id."""
+    with sql_context() as cur:
+        cur.execute("""SELECT expression, guesses, finished FROM game WHERE id = (?)""", (game_id,))
+        try:
+            answer, guesses, finished = cur.fetchone()
+        except TypeError:
+            logger.info(f"Invalid expression with game id: {game_id}")
+            abort(500)
+    logger.info(f"got {(answer, guesses, finished)}")
+    return answer, finished, guesses

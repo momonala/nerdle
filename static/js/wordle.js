@@ -153,17 +153,13 @@ window.app = new Vue({
                 let word = row.map(val => {
                     return val.letter
                 }).join("");
-                console.log(row);
                 console.log(word);
-                console.log(word.length < this.wordLength);
                 if (word.length < this.wordLength) return;
-                console.log("passed word length");
                 const newRow = await this.api.guess(this.gameID, this.apiKey, word)
                 console.log(newRow);
                 if (!newRow) {
                     return
                 }
-                console.log("passed new row");
 
                 let correct = true
                 newRow.forEach((val, idx) => {
